@@ -1,6 +1,6 @@
 .SUFFIXES:
 SUFFIXES =
-.SUFFIXES: .c .cpp .h .hpp .rc .res .inl .o .d .asm
+.SUFFIXES: .c .cpp .cc .h .hpp .rc .res .inl .o .d .asm
 
 
 #==============================================================================
@@ -62,7 +62,7 @@ PRODUCTION_FOLDER_RESOURCES := $(PRODUCTION_FOLDER)
 #==============================================================================
 # Library directories (separated by spaces)
 LIB_DIRS?=
-INCLUDE_DIRS?=
+INCLUDE_DIRS += include
 # Link libraries (separated by spaces)
 LINK_LIBRARIES?=
 
@@ -216,6 +216,9 @@ _Q := $(if $(_CLEAN),@)
 CC?=g++
 RC?=windres.exe
 CFLAGS?=-O2 -Wall -fdiagnostics-color=always
+
+IGNORED_ERRORS := reorder missing-declarations unused-but-set-variable unused-parameter unused-variable unused-function missing-include-dirs switch-default switch
+CFLAGS += $(addprefix -Wno-error=,$(IGNORED_ERRORS))
 
 CFLAGS_DEPS = -MT $@ -MMD -MP -MF $(DEP_DIR)/$*.Td
 CFLAGS_DEPS_T = -MT $@ -MMD -MP -MF $(DEP_DIR)/.$(TEST_DIR)/$*.Td
