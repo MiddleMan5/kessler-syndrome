@@ -13,7 +13,7 @@
       ],
       "defines": ["_DEBUG"],
       "cStandard": "c11",
-      "cppStandard": "c++17",
+      "cppStandard": "c++20",
       "forcedInclude": ["${workspaceFolder}/src/PCH.hpp"]
     }
   ],

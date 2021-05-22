@@ -364,9 +364,11 @@ $(_DIRECTORIES):
 	$(if $(_CLEAN),,@printf '\$(color_blue)')
 	$(MKDIR) $@
 
+CLEAN_FILES := $(TARGET) $(DEPS) $(OBJS) gmon.out bin
+
 clean:
 	$(if $(_CLEAN),@printf '   $(color_blue)Cleaning old build files & folders...\n\n',@printf '$(color_blue)')
-	$(_Q)$(RM) $(TARGET) $(DEPS) $(OBJS)
+	$(_Q)$(RM) -rf $(CLEAN_FILES)
 .PHONY: clean
 
 #==============================================================================

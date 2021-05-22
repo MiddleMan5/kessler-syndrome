@@ -1,0 +1,48 @@
+Window {
+  backgroundcolor: #abcdef55;
+}
+
+/* Matches all Labels who are direct children of the table */
+/* This is NOT equivalent to "Window Label" */
+Window > * > * > Label {
+  fontsize: 18;
+  fontname: data/linden_hill.otf;
+}
+
+Button {
+  backgroundcolor: #000000ff;
+}
+
+Button:prelight {
+  backgroundcolor: #444444ff;
+}
+
+Button {
+  color: #ffffffff;
+}
+
+/* Matches all Buttons who are descendants of ScrolledWindow */
+ScrolledWindow Button {
+  backgroundcolor: #123456ff;
+}
+
+ScrolledWindow Button:prelight {
+  backgroundcolor: #345678ff;
+}
+
+ScrolledWindow Button {
+  color: #ffffffff;
+}
+
+Button#close {
+  backgroundcolor: #ff0000ff;
+}
+
+/* Grouping multiple selectors is also possible.
+   This is the same as writing the same declarations
+   in multiple rule blocks for each widget, just
+   compact. :) */
+CheckButton,
+ToggleButton {
+  fontsize: 18;
+}

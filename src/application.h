@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "element.h"
 #include <SFGUI/Renderers.hpp>
 #include <SFGUI/SFGUI.hpp>
 #include <SFGUI/Widgets.hpp>
@@ -24,6 +25,60 @@ public:
 		// We're not using SFML to render anything in this program, so reset OpenGL
 		// states. Otherwise we wouldn't see anything.
 		render_window.resetGLStates();
+
+		window_main = sfg::Window::Create(sfg::Window::Style::TITLEBAR | sfg::Window::Style::BACKGROUND | sfg::Window::Style::CLOSE);
+		window_main->SetTitle(config.title);
+
+		loadFonts();
+		configure();
+	}
+
+	void configure()
+	{
+		render_window.setVerticalSyncEnabled(false);
+		render_window.setFramerateLimit(config.frame_rate);
+		render_window.setActive(true);
+	}
+
+	void loadFonts()
+	{
+		const auto font_folder = "resources/fonts";
+		std::vector<std::string> font_extensions { ".otf", ".ttf" };
+
+		const auto is_font = [&](util::fs::path const& path) -> bool {
+			if (util::fs::is_regular_file(path))
+			{
+				const auto file_ext = path.extension();
+				for (auto& ext : font_extensions)
+				{
+					if (file_ext == ext)
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		};
+
+		for (const auto& entry : util::fs::directory_iterator(font_folder))
+		{
+			auto path = entry.path();
+			if (is_font(path))
+			{
+				// Play around with resource manager.
+				auto font_name = path.filename();
+				auto font_ptr = std::make_shared<sf::Font>();
+				font_ptr->loadFromFile(path);
+				desktop.GetEngine().GetResourceManager().AddFont(font_name, font_ptr);
+			}
+		}
+	}
+
+	int run()
+	{
+		sf::Texture m_background_texture;
+		sf::Sprite m_background_sprite;
+		sf::Sprite m_canvas_sprite;
 
 		m_background_texture.create(config.width, config.height);
 
@@ -53,28 +108,21 @@ public:
 		}
 
 		m_background_texture.update(pixels.data());
-
 		m_background_sprite.setTexture(m_background_texture);
-	}
 
-	int run()
-	{
 		sf::Event event;
-
-		render_window.setVerticalSyncEnabled(true);
-		render_window.setFramerateLimit(config.frame_rate);
-		render_window.setActive(true);
 		std::string renderer_string;
 
 		// Tune Renderer
-		if (sfgui.GetRenderer().GetName() == "Non-Legacy Renderer")
+		auto renderer_name = sfgui.GetRenderer().GetName();
+		if (renderer_name == "Non-Legacy Renderer")
 		{
 			static_cast<sfg::NonLegacyRenderer*>(&sfgui.GetRenderer())->TuneUseFBO(true);
 			static_cast<sfg::NonLegacyRenderer*>(&sfgui.GetRenderer())->TuneCull(true);
 
 			renderer_string = "NLR";
 		}
-		if (sfgui.GetRenderer().GetName() == "Vertex Buffer Renderer")
+		else if (renderer_name == "Vertex Buffer Renderer")
 		{
 			static_cast<sfg::VertexBufferRenderer*>(&sfgui.GetRenderer())->TuneUseFBO(true);
 			static_cast<sfg::VertexBufferRenderer*>(&sfgui.GetRenderer())->TuneAlphaThreshold(.2f);
@@ -82,7 +130,7 @@ public:
 
 			renderer_string = "VBR";
 		}
-		else if (sfgui.GetRenderer().GetName() == "Vertex Array Renderer")
+		else if (renderer_name == "Vertex Array Renderer")
 		{
 			static_cast<sfg::VertexArrayRenderer*>(&sfgui.GetRenderer())->TuneAlphaThreshold(.2f);
 			static_cast<sfg::VertexArrayRenderer*>(&sfgui.GetRenderer())->TuneCull(true);
@@ -90,18 +138,7 @@ public:
 			renderer_string = "VAR";
 		}
 
-		// Play around with resource manager.
-		std::shared_ptr<sf::Font> my_font = std::make_shared<sf::Font>();
-		my_font->loadFromFile("data/linden_hill.otf");
-		desktop.GetEngine().GetResourceManager().AddFont("custom_font", my_font);
-
-		// Set properties.
-		// Multiple properties can be set at once to save calls.
-
-		// desktop.SetProperty( "Button#close:Normal", "Color", sf::Color::Yellow );
-		// #close is sufficient since there is only 1 widget with this id
-		// desktop.SetProperty( "#close", "FontName", "data/linden_hill.otf" );
-		// desktop.SetProperty( "#close", "FontSize", 15.f );
+		// Set desktop properties.
 
 		// We will batch the above properties into this call.
 		desktop.SetProperties(
@@ -113,129 +150,51 @@ public:
 			"	Color: #FFFF00FF;"
 			"}"
 			"#close {"
-			"	FontName: data/linden_hill.otf;"
+			"	FontName: resources/fonts/linden_hill.otf;"
 			"	FontSize: 15;"
 			"}");
 
-		// Create widgets.
-		window_main = sfg::Window::Create(sfg::Window::Style::TITLEBAR | sfg::Window::Style::BACKGROUND | sfg::Window::Style::RESIZE | sfg::Window::Style::CLOSE);
-		window_main->SetTitle(L"Example application");
+		auto material_menu_frame = sfg::Frame::Create(L"Pixel Type");
+		auto material_menu = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
 
-		auto btnaddbuttonh = sfg::Button::Create(L"Add button horizontally");
-		auto btnaddbuttonv = sfg::Button::Create(L"Add button vertically");
-		m_titlebar_toggle = sfg::ToggleButton::Create("Toggle titlebar");
-		m_titlebar_toggle->SetActive(true);
+		const std::map<std::string, Element> element_types {
+			{ "sand", Element { .color = sf::Color::Yellow } },
+			{ "sand", Element { .color = sf::Color::Yellow } },
+		};
 
+		auto material_props_table = sfg::Table::Create();
+		std::vector<std::string> prop_names { "Mass", "Color", "Scale" };
+		for (std::size_t i { 0 }; i < prop_names.size(); i++)
 		{
-			sf::Image add_image;
-			if (add_image.loadFromFile("data/add.png"))
-			{
-				auto image = sfg::Image::Create(add_image);
-				btnaddbuttonh->SetImage(image);
+			auto& name = prop_names[i];
+			material_props_table->Attach(sfg::Label::Create(name), sf::Rect<sf::Uint32>(0, i, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
+			material_props_table->Attach(sfg::Label::Create("Value"), sf::Rect<sf::Uint32>(1, i, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
+		}
+		material_props_table->SetRowSpacings(5.f);
+		material_props_table->SetColumnSpacings(5.f);
 
-				image = sfg::Image::Create(add_image);
-				btnaddbuttonv->SetImage(image);
-			}
+		material_menu->Pack(material_props_table);
+
+		material_menu->SetSpacing(5.f);
+
+		auto block_selector = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
+
+		for (std::size_t i { 0 }; i < prop_names.size(); i++)
+		{
+			auto& name = prop_names[i];
+			material_props_table->Attach(sfg::Label::Create(name), sf::Rect<sf::Uint32>(0, i, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
+			material_props_table->Attach(sfg::Label::Create("Value"), sf::Rect<sf::Uint32>(1, i, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
 		}
 
-		auto btnhidewindow = sfg::Button::Create(L"Close window");
-		btnhidewindow->SetId("close");
-
-		{
-			sf::Image close_image;
-			if (close_image.loadFromFile("data/delete.png"))
-			{
-				auto image = sfg::Image::Create(close_image);
-				btnhidewindow->SetImage(image);
-			}
-		}
-
-		auto btntoggleori = sfg::Button::Create(L"Box Orientation");
-		auto btntogglespace = sfg::Button::Create(L"Box Spacing");
-		auto btnloadstyle = sfg::Button::Create(L"Load theme");
-
-		m_entry = sfg::Entry::Create(L"Type");
-		m_entry->SetRequisition(sf::Vector2f(100.f, .0f));
-		m_entry->AppendText(L" something!");
-
-		m_limit_check = sfg::CheckButton::Create(L"Limit to 4 chars");
-		m_limit_check->SetId("limit_check");
-
-		auto password = sfg::Entry::Create();
-		password->HideText('*');
-
-		// Layout.
-		auto boxtoolbar = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
-		boxtoolbar->SetSpacing(5.f);
-		boxtoolbar->Pack(btnaddbuttonh, false);
-		boxtoolbar->Pack(btnaddbuttonv, false);
-		boxtoolbar->Pack(m_titlebar_toggle, false);
-		boxtoolbar->Pack(btnhidewindow, false);
-		boxtoolbar->Pack(m_entry, true);
-		boxtoolbar->Pack(m_limit_check, false);
-
-		auto frame1 = sfg::Frame::Create(L"Toolbar 1");
-		frame1->Add(boxtoolbar);
-
-		auto boxtoolbar2 = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
-		boxtoolbar2->SetSpacing(5.f);
-		boxtoolbar2->Pack(btntoggleori, false);
-		boxtoolbar2->Pack(btntogglespace, false);
-		boxtoolbar2->Pack(btnloadstyle, false);
-
-		m_boxbuttonsh = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
-		m_boxbuttonsh->SetSpacing(5.f);
-
-		m_boxbuttonsv = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
-		m_boxbuttonsv->SetSpacing(5.f);
-
-		m_boxorientation = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
-		m_boxorientation->SetSpacing(5.f);
-		m_boxorientation->Pack(sfg::Button::Create(L"Hello"));
-		m_boxorientation->Pack(sfg::Button::Create(L"World"));
-
-		auto username_entry = sfg::Entry::Create();
-		username_entry->SetMaximumLength(8);
-
-		m_progress = sfg::ProgressBar::Create(sfg::ProgressBar::Orientation::HORIZONTAL);
-		m_progress->SetRequisition(sf::Vector2f(0.f, 20.f));
-
-		m_progress_vert = sfg::ProgressBar::Create(sfg::ProgressBar::Orientation::VERTICAL);
-		m_progress_vert->SetRequisition(sf::Vector2f(20.f, 0.f));
-
-		auto separatorv = sfg::Separator::Create(sfg::Separator::Orientation::VERTICAL);
-
-		m_table = sfg::Table::Create();
-		m_table->Attach(sfg::Label::Create(L"Please login using your username and password (span example)."), sf::Rect<sf::Uint32>(0, 0, 2, 1), sfg::Table::FILL, sfg::Table::FILL | sfg::Table::EXPAND);
-		m_table->Attach(sfg::Label::Create(L"Username:"), sf::Rect<sf::Uint32>(0, 1, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
-		m_table->Attach(username_entry, sf::Rect<sf::Uint32>(1, 1, 1, 1), sfg::Table::EXPAND | sfg::Table::FILL, sfg::Table::FILL);
-		m_table->Attach(sfg::Label::Create(L"Password:"), sf::Rect<sf::Uint32>(0, 2, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
-		m_table->Attach(password, sf::Rect<sf::Uint32>(1, 2, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
-		m_table->Attach(sfg::Button::Create(L"Login"), sf::Rect<sf::Uint32>(2, 1, 1, 2), sfg::Table::FILL, sfg::Table::FILL);
-		m_table->Attach(separatorv, sf::Rect<sf::Uint32>(3, 0, 1, 3), sfg::Table::FILL, sfg::Table::FILL);
-		m_table->Attach(m_progress_vert, sf::Rect<sf::Uint32>(4, 0, 1, 3), sfg::Table::FILL, sfg::Table::FILL);
-		m_table->SetRowSpacings(5.f);
-		m_table->SetColumnSpacings(5.f);
-
-		m_scrolled_window_box = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
-
-		for (int i = 0; i < 5; i++)
-		{
-			auto box = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
-
-			for (int j = 0; j < 20; j++)
-			{
-				box->Pack(sfg::Button::Create(L"One button among many"), true);
-			}
-
-			m_scrolled_window_box->Pack(box, false);
-		}
+		material_menu_frame->Add(sfg::Separator::Create(sfg::Separator::Orientation::HORIZONTAL));
+		material_menu_frame->Add(material_menu);
+		window_main->Add(material_menu);
 
 		m_scrolled_window = sfg::ScrolledWindow::Create();
 		m_scrolled_window->SetRequisition(sf::Vector2f(.0f, 160.f));
 		m_scrolled_window->SetScrollbarPolicy(sfg::ScrolledWindow::HORIZONTAL_AUTOMATIC | sfg::ScrolledWindow::VERTICAL_AUTOMATIC);
 		m_scrolled_window->SetPlacement(sfg::ScrolledWindow::Placement::TOP_LEFT);
-		m_scrolled_window->AddWithViewport(m_scrolled_window_box);
+		//m_scrolled_window->AddWithViewport(m_scrolled_window_box);
 
 		auto scrollbar = sfg::Scrollbar::Create();
 		scrollbar->SetRange(.0f, 100.f);
@@ -243,7 +202,6 @@ public:
 		m_scale = sfg::Scale::Create();
 		m_scale->SetAdjustment(scrollbar->GetAdjustment());
 		m_scale->SetRequisition(sf::Vector2f(100.f, .0f));
-		boxtoolbar2->Pack(m_scale, false);
 
 		m_combo_box = sfg::ComboBox::Create();
 
@@ -256,14 +214,9 @@ public:
 			m_combo_box->AppendItem(sstr.str());
 		}
 
-		boxtoolbar2->Pack(m_combo_box, true);
-
 		m_switch_renderer = sfg::Button::Create("Renderer: " + renderer_string);
 
-		boxtoolbar2->Pack(m_switch_renderer, false);
-
 		auto frame2 = sfg::Frame::Create(L"Toolbar 2");
-		frame2->Add(boxtoolbar2);
 		frame2->SetAlignment(sf::Vector2f(.8f, .0f));
 
 		auto separatorh = sfg::Separator::Create(sfg::Separator::Orientation::HORIZONTAL);
@@ -279,7 +232,7 @@ public:
 		sf::Image sfgui_logo;
 		m_image = sfg::Image::Create();
 
-		if (sfgui_logo.loadFromFile("data/sfgui.png"))
+		if (sfgui_logo.loadFromFile("resources/img/logo.png"))
 		{
 			m_image->SetImage(sfgui_logo);
 			box_image->Pack(m_image, false);
@@ -338,41 +291,16 @@ public:
 		auto boxmain = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
 		boxmain->SetSpacing(5.f);
 		boxmain->Pack(scrollbar, false);
-		boxmain->Pack(m_progress, false);
-		boxmain->Pack(frame1, false);
+		//boxmain->Pack(m_progress, false);
+		//boxmain->Pack(material_menu, false);
 		boxmain->Pack(frame2, false);
-		boxmain->Pack(m_boxbuttonsh, false);
-		boxmain->Pack(m_boxbuttonsv, false);
+		//boxmain->Pack(m_boxbuttonsh, false);
+		//boxmain->Pack(m_boxbuttonsv, false);
 		boxmain->Pack(box_image, true);
 		boxmain->Pack(separatorh, false);
-		boxmain->Pack(m_table, true);
-		boxmain->Pack(m_boxorientation, true);
+		//boxmain->Pack(m_table, true);
+		//boxmain->Pack(m_boxorientation, true);
 		boxmain->Pack(m_scrolled_window);
-
-		auto notebook1 = sfg::Notebook::Create();
-		auto notebook2 = sfg::Notebook::Create();
-		auto notebook3 = sfg::Notebook::Create();
-		auto notebook4 = sfg::Notebook::Create();
-
-		notebook1->SetTabPosition(sfg::Notebook::TabPosition::TOP);
-		notebook2->SetTabPosition(sfg::Notebook::TabPosition::RIGHT);
-		notebook3->SetTabPosition(sfg::Notebook::TabPosition::BOTTOM);
-		notebook4->SetTabPosition(sfg::Notebook::TabPosition::LEFT);
-
-		auto vertigo_box = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
-		auto vertigo_button = sfg::Button::Create(L"Vertigo");
-		vertigo_box->Pack(vertigo_button, true, true);
-
-		notebook1->AppendPage(boxmain, sfg::Label::Create("Page Name Here"));
-		notebook1->AppendPage(notebook2, sfg::Label::Create("Another Page"));
-		notebook2->AppendPage(notebook3, sfg::Label::Create("Yet Another Page"));
-		notebook2->AppendPage(sfg::Label::Create(L""), sfg::Label::Create("Dummy Page"));
-		notebook3->AppendPage(notebook4, sfg::Label::Create("And Another Page"));
-		notebook3->AppendPage(sfg::Label::Create(L""), sfg::Label::Create("Dummy Page"));
-		notebook4->AppendPage(vertigo_box, sfg::Label::Create("And The Last Page"));
-		notebook4->AppendPage(sfg::Label::Create(L""), sfg::Label::Create("Dummy Page"));
-
-		window_main->Add(notebook1);
 
 		// Signals.
 		// window_main->GetSignal(sfg::Window::OnCloseButton).Connect([this] { OnHideWindowClicked(); });
@@ -389,62 +317,7 @@ public:
 		// mirror_image->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnMirrorImageClick(); });
 		// m_switch_renderer->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnSwitchRendererClick(); });
 
-		spinbutton->SetValue(20.f);
-		spinbutton->GetAdjustment()->SetMinorStep(.8f);
-
 		window_main->SetPosition(sf::Vector2f(100.f, 100.f));
-
-		// Another window
-		auto second_window = sfg::Window::Create(sfg::Window::TITLEBAR | sfg::Window::BACKGROUND | sfg::Window::RESIZE);
-		second_window->SetId("second_window");
-		second_window->SetTitle("Resize this window to see ad-hoc wrapping.");
-		auto box = sfg::Box::Create(sfg::Box::Orientation::VERTICAL, 5.f);
-
-		auto lipsum = sfg::Label::Create(
-			"Nullam ut ante leo. Quisque consequat condimentum pulvinar. "
-			"Duis a enim sapien, ut vestibulum est. Vestibulum commodo, orci non gravida. "
-			"Aliquam sed pretium lacus. "
-			"Nullam placerat mauris vel nulla sagittis pellentesque. "
-			"Suspendisse in justo dui.\n"
-			"Ut dolor massa, gravida eu facilisis convallis, convallis sed odio.\n"
-			"Nunc placerat consequat vehicula.");
-
-		lipsum->SetRequisition(sf::Vector2f(400.f, 0.f));
-		lipsum->SetLineWrap(true);
-
-		box->Pack(lipsum);
-		second_window->Add(box);
-		second_window->SetPosition(sf::Vector2f(10.f, 10.f));
-		second_window->SetId("second_window");
-		desktop.Add(second_window);
-
-		auto third_window = sfg::Window::Create(sfg::Window::TITLEBAR | sfg::Window::BACKGROUND | sfg::Window::RESIZE);
-
-		m_gl_canvas = sfg::Canvas::Create(true);
-		m_gl_canvas->SetRequisition(sf::Vector2f(200.f, 150.f));
-
-		third_window->Add(m_gl_canvas);
-
-		third_window->SetId("third_window");
-		third_window->SetTitle("Embedded OpenGL drawing");
-		third_window->SetPosition(sf::Vector2f(480.f, 20.f));
-		desktop.Add(third_window);
-
-		sf::Texture texture;
-		texture.loadFromImage(sfgui_logo);
-		m_canvas_sprite.setTexture(texture);
-
-		//auto fourth_window = sfg::Window::Create( sfg::Window::TITLEBAR | sfg::Window::BACKGROUND | sfg::Window::RESIZE );
-
-		//m_sfml_canvas = sfg::Canvas::Create();
-		//m_sfml_canvas->SetRequisition( sf::Vector2f( static_cast<float>( texture.getSize().x ), static_cast<float>( texture.getSize().y ) ) );
-
-		//fourth_window->Add( m_sfml_canvas );
-
-		//fourth_window->SetId( "fourth_window" );
-		//fourth_window->SetTitle( "Embedded SFML drawing" );
-		//fourth_window->SetPosition( sf::Vector2f( 760.f, 20.f ) );
-		//desktop.Add( fourth_window );
 
 		// Add window to desktop
 		desktop.Add(window_main);
@@ -468,7 +341,7 @@ public:
 			{
 				if (event.type == sf::Event::Closed)
 				{
-					return 1;
+					return EXIT_SUCCESS;
 				}
 
 				desktop.HandleEvent(event);
@@ -478,27 +351,8 @@ public:
 
 			auto microseconds = clock.getElapsedTime().asMicroseconds();
 
-			// Only update every 5ms
-			if (microseconds > 5000)
-			{
-				desktop.Update(static_cast<float>(microseconds) / 1000000.f);
-				clock.restart();
-
-				// Only refresh canvas contents every 5ms too
-				m_gl_canvas->Bind();
-				m_gl_canvas->Clear(sf::Color(0, 0, 0, 0), true);
-				//RenderCustomGL();
-				m_gl_canvas->Display();
-				m_gl_canvas->Unbind();
-
-				//m_sfml_canvas->Bind();
-				//m_sfml_canvas->Clear( sf::Color( 0, 0, 0, 0 ) );
-				//RenderCustomSFML();
-				//m_sfml_canvas->Display();
-				//m_sfml_canvas->Unbind();
-
-				render_window.setActive(true);
-			}
+			desktop.Update(static_cast<float>(microseconds) / 1000000.f);
+			render_window.setActive(true);
 
 			sfgui.Display(render_window);
 
@@ -534,7 +388,7 @@ public:
 
 			++m_fps_counter;
 		}
-		return 0;
+		return EXIT_SUCCESS;
 	}
 
 protected:
@@ -568,8 +422,4 @@ protected:
 
 	unsigned int m_fps_counter;
 	sf::Clock m_fps_clock;
-
-	sf::Texture m_background_texture;
-	sf::Sprite m_background_sprite;
-	sf::Sprite m_canvas_sprite;
 };

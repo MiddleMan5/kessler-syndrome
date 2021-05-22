@@ -3,7 +3,7 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 
-struct Particle2D : sf::Transformable
+struct Element
 {
 	// Color of pixel
 	sf::Color color { 255, 255, 255 };
@@ -15,8 +15,6 @@ struct Particle2D : sf::Transformable
 	// This blocks net mass in kilograms
 	float mass { 1 };
 
-	// Width and height of Block
-	uint32_t scale { 10 };
 	// False if block should move on next render
 	bool fixed { false };
 	// True if this block should render
@@ -26,9 +24,12 @@ struct Particle2D : sf::Transformable
 	{
 		return true;
 	}
+};
 
+struct ElementInstance : public Element, sf::Transformable
+{
 	// Update block physics
-	virtual void update(double dT)
+	void update(double dT)
 	{
 		if (!this->fixed)
 		{
@@ -55,17 +56,15 @@ struct Particle2D : sf::Transformable
 			rect.setFillColor(this->color);
 
 			const auto display_coords = this->getPosition();
-			const auto scale_factor = this->scale;
 			rect.setPosition(display_coords);
-			rect.setScale(scale_factor, scale_factor);
 			target.draw(rect, transform);
 		}
 	}
 };
 
-struct ParticleContainer : sf::Transformable
+struct ElementContainer : sf::Transformable
 {
-	ParticleContainer()
+	ElementContainer()
 	{
 		this->children.reserve(1000);
 	}
@@ -74,7 +73,7 @@ struct ParticleContainer : sf::Transformable
 	template <typename... Args>
 	auto add(Args&&... args)
 	{
-		return this->children.emplace_back(std::make_shared<Particle2D>(std::forward<Args>(args)...));
+		return this->children.emplace_back(std::make_shared<Element>(std::forward<Args>(args)...));
 	}
 
 	void draw(sf::RenderTarget& target, const sf::Transform& parentTransform) const
@@ -97,5 +96,5 @@ struct ParticleContainer : sf::Transformable
 		}
 	}
 
-	std::vector<std::shared_ptr<Particle2D>> children;
+	std::vector<std::shared_ptr<ElementInstance>> children;
 };
