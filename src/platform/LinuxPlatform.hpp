@@ -1,7 +1,7 @@
 #ifndef UTIL_LINUX_PLATFORM_HPP
 #define UTIL_LINUX_PLATFORM_HPP
 
-#include "Platform/IPlatform.hpp"
+#include "platform/IPlatform.hpp"
 
 namespace util
 {

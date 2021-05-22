@@ -1,0 +1,6 @@
+[submodule "dependencies/config-cpp"]
+	path = dependencies/config-cpp
+	url = https://github.com/CJLove/config-cpp.git
+[submodule "dependencies/sfgui"]
+	path = dependencies/sfgui
+	url = https://github.com/TankOs/SFGUI.git

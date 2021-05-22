@@ -63,8 +63,8 @@
 #endif // _WIN32
 
 // Utils
-#include "Utility/FileSystem.hpp"
-#include "Utility/Types.hpp"
+#include "utility/FileSystem.hpp"
+#include "utility/Types.hpp"
 
 // Macros
 #define UNUSED(x) (void)(x)

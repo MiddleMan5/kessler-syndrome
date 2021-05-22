@@ -1,42 +1,19 @@
 #include "input.h"
 #include <SFML/Graphics.hpp>
+
 #include <filesystem>
 #include <fstream>
 #include <list>
 #include <vector>
 
-#include "Platform/Platform.hpp"
+#include "application.h"
+#include "config.h"
 #include "particle.h"
+#include "platform/Platform.hpp"
 
 #if defined(__linux__)
 	#include <X11/Xlib.h>
 #endif
-
-struct AppConfig
-{
-	// Window settings
-	uint32_t width { 800 };
-	uint32_t height { 400 };
-	uint32_t frame_rate { 120 };
-	std::string title = "Kessler Syndrome";
-};
-
-static AppConfig loadUserConf(std::filesystem::path path)
-{
-	std::ifstream conf_file(path.c_str());
-	AppConfig config {};
-	if (conf_file)
-	{
-		conf_file >> config.width;
-		conf_file >> config.height;
-		conf_file >> config.frame_rate;
-	}
-	else
-	{
-		std::cout << "Couldn't find " << path << ", loading default" << std::endl;
-	}
-	return config;
-}
 
 struct ThreadArgs
 {
@@ -115,58 +92,12 @@ static void physicsThread(ThreadArgs& args)
 
 int main()
 {
+	sfg::SFGUI sfgui;
 #if defined(__linux__)
 	XInitThreads();
 #endif
-	const auto config = loadUserConf("conf.txt");
-
-	sf::ContextSettings settings;
-	settings.antialiasingLevel = 4;
-
-	sf::RenderWindow window(sf::VideoMode(config.width, config.height), config.title.c_str(), sf::Style::Default, settings);
-	//sf::View view{};
-
-	window.setFramerateLimit(config.frame_rate);
-	window.setActive(false);
-
-	InputManager input_manager { window };
-	ParticleContainer particle_container;
-
-	// Handle mouse clicks
-	input_manager.registerMouseButtonEvent([&](sf::Event event) {
-		if (event.type == sf::Event::MouseButtonPressed)
-		{
-			if (event.mouseButton.button == sf::Mouse::Button::Left)
-			{
-				const auto mouse_position = sf::Mouse::getPosition(window);
-				const auto world_coords = window.mapPixelToCoords(mouse_position);
-				Particle2D new_block {};
-				new_block.setPosition(world_coords);
-				std::cout << "Creating new block: X:" << world_coords.x << " Y:" << world_coords.y << std::endl;
-				particle_container.add(new_block);
-			}
-		}
-	});
-
-	// launch the rendering thread
-	ThreadArgs args { window, input_manager, particle_container };
-	sf::Thread render_thread(&renderingThread, args);
-	sf::Thread physics_thread(&physicsThread, args);
-	render_thread.launch();
-	physics_thread.launch();
-
-	while (window.isOpen())
-	{
-		input_manager.processEvents();
-	}
-	return 0;
+	const auto config_path = util::fs::path("configs/config.txt");
+	const auto config = AppConfig::loadFile(config_path);
+	Application app { config };
+	return app.run();
 }
-
-#if defined(_WIN32)
-	#include <windows.h>
-int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline,
-	int cmdshow)
-{
-	return main();
-}
-#endif

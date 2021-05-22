@@ -76,7 +76,7 @@ BUILD_MACROS?=
 BUILD_FLAGS?=
 
 # Build dependencies to copy into the bin/(build) folder - example: openal32.dll
-BUILD_DEPENDENCIES?=
+BUILD_DEPENDENCIES ?=
 
 # NAME should always be passed as an argument from tasks.json as the root folder name, but uses a fallback of "game.exe"
 # This is used for the output filename (game.exe)

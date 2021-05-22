@@ -14,7 +14,8 @@ BUILD_FLAGS := \
 LINK_LIBRARIES := \
 	$(LINK_LIBRARIES) \
 	stdc++fs \
-	X11
+	X11 \
+	SFGUI
 
 PRODUCTION_LINUX_ICON := sfml
 
