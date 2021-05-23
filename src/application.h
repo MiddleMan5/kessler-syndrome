@@ -22,15 +22,26 @@ public:
 		render_window { sf::VideoMode(config.width, config.height), config.title.c_str(), sf::Style::Default, config.renderSettings },
 		sfgui {}
 	{
+		loadFonts();
+		configure();
+
 		// We're not using SFML to render anything in this program, so reset OpenGL
 		// states. Otherwise we wouldn't see anything.
 		render_window.resetGLStates();
 
 		window_main = sfg::Window::Create(sfg::Window::Style::TITLEBAR | sfg::Window::Style::BACKGROUND | sfg::Window::Style::CLOSE);
 		window_main->SetTitle(config.title);
+		window_main->SetPosition(sf::Vector2f(1400.f, 100.f));
 
-		loadFonts();
-		configure();
+		window_canvas = sfg::Window::Create(sfg::Window::Style::TITLEBAR | sfg::Window::Style::BACKGROUND);
+		window_canvas->SetPosition(sf::Vector2f(10.f, 10.f));
+		canvas = sfg::Canvas::Create(false);
+		canvas->SetRequisition(sf::Vector2f(config.width / 2.f, config.height / 2.f));
+		window_canvas->Add(canvas);
+
+		// Add windows to desktop
+		desktop.Add(window_main);
+		desktop.Add(window_canvas);
 	}
 
 	void configure()
@@ -154,173 +165,55 @@ public:
 			"	FontSize: 15;"
 			"}");
 
-		auto material_menu_frame = sfg::Frame::Create(L"Pixel Type");
-		auto material_menu = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
+		auto element_menu = sfg::Notebook::Create();
+		element_menu->SetTabPosition(sfg::Notebook::TabPosition::TOP);
 
-		const std::map<std::string, Element> element_types {
-			{ "sand", Element { .color = sf::Color::Yellow } },
-			{ "sand", Element { .color = sf::Color::Yellow } },
-		};
-
-		auto material_props_table = sfg::Table::Create();
-		std::vector<std::string> prop_names { "Mass", "Color", "Scale" };
-		for (std::size_t i { 0 }; i < prop_names.size(); i++)
+		for (auto& [name, element] : element_types)
 		{
-			auto& name = prop_names[i];
-			material_props_table->Attach(sfg::Label::Create(name), sf::Rect<sf::Uint32>(0, i, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
-			material_props_table->Attach(sfg::Label::Create("Value"), sf::Rect<sf::Uint32>(1, i, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
-		}
-		material_props_table->SetRowSpacings(5.f);
-		material_props_table->SetColumnSpacings(5.f);
-
-		material_menu->Pack(material_props_table);
-
-		material_menu->SetSpacing(5.f);
-
-		auto block_selector = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
-
-		for (std::size_t i { 0 }; i < prop_names.size(); i++)
-		{
-			auto& name = prop_names[i];
-			material_props_table->Attach(sfg::Label::Create(name), sf::Rect<sf::Uint32>(0, i, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
-			material_props_table->Attach(sfg::Label::Create("Value"), sf::Rect<sf::Uint32>(1, i, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
+			auto element_page = sfg::Table::Create();
+			element_page->Attach(sfg::Label::Create("mass"), sf::Rect<sf::Uint32>(0, 0, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
+			element_page->Attach(sfg::Label::Create(std::to_string(element.mass)), sf::Rect<sf::Uint32>(1, 0, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
+			element_page->SetId(name);
+			element_page->SetRowSpacings(5.f);
+			element_page->SetColumnSpacings(5.f);
+			element_menu->AppendPage(element_page, sfg::Label::Create(name));
 		}
 
-		material_menu_frame->Add(sfg::Separator::Create(sfg::Separator::Orientation::HORIZONTAL));
-		material_menu_frame->Add(material_menu);
-		window_main->Add(material_menu);
+		auto element_menu_frame = sfg::Frame::Create(L"Element Type");
+		element_menu_frame->Add(element_menu);
 
-		m_scrolled_window = sfg::ScrolledWindow::Create();
-		m_scrolled_window->SetRequisition(sf::Vector2f(.0f, 160.f));
-		m_scrolled_window->SetScrollbarPolicy(sfg::ScrolledWindow::HORIZONTAL_AUTOMATIC | sfg::ScrolledWindow::VERTICAL_AUTOMATIC);
-		m_scrolled_window->SetPlacement(sfg::ScrolledWindow::Placement::TOP_LEFT);
-		//m_scrolled_window->AddWithViewport(m_scrolled_window_box);
+		auto buttons_frame = sfg::Frame::Create(L"Buttons");
+		auto buttons = sfg::Box::Create();
+		auto clear_button = sfg::Button::Create("Clear");
+		buttons->Pack(clear_button);
+		buttons_frame->Add(buttons);
 
-		auto scrollbar = sfg::Scrollbar::Create();
-		scrollbar->SetRange(.0f, 100.f);
+		// Update the currently selected element
+		clear_button->GetSignal(sfg::Notebook::OnLeftClick).Connect([this] {
+			this->elements.children.clear();
+		});
 
-		m_scale = sfg::Scale::Create();
-		m_scale->SetAdjustment(scrollbar->GetAdjustment());
-		m_scale->SetRequisition(sf::Vector2f(100.f, .0f));
+		auto layout = sfg::Box::Create();
+		layout->Pack(element_menu_frame);
+		layout->Pack(buttons_frame);
+		window_main->Add(layout);
 
-		m_combo_box = sfg::ComboBox::Create();
+		// Signals
 
-		for (int index = 0; index < 30; ++index)
-		{
-			std::stringstream sstr;
+		// Update the currently selected element
+		element_menu->GetSignal(sfg::Notebook::OnTabChange).Connect([this, &element_menu] {
+			auto current_page = element_menu->GetCurrentPage();
+			this->active_element_name = element_menu->GetNthPage(current_page)->GetId();
+		});
 
-			sstr << "Item " << index;
-
-			m_combo_box->AppendItem(sstr.str());
-		}
-
-		m_switch_renderer = sfg::Button::Create("Renderer: " + renderer_string);
-
-		auto frame2 = sfg::Frame::Create(L"Toolbar 2");
-		frame2->SetAlignment(sf::Vector2f(.8f, .0f));
-
-		auto separatorh = sfg::Separator::Create(sfg::Separator::Orientation::HORIZONTAL);
-
-		auto box_image = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
-		box_image->SetSpacing(15.f);
-
-		auto fixed_container = sfg::Fixed::Create();
-		auto fixed_button = sfg::Button::Create(L"I'm at (34,61)");
-		fixed_container->Put(fixed_button, sf::Vector2f(34.f, 61.f));
-		box_image->Pack(fixed_container, false);
-
-		sf::Image sfgui_logo;
-		m_image = sfg::Image::Create();
-
-		if (sfgui_logo.loadFromFile("resources/img/logo.png"))
-		{
-			m_image->SetImage(sfgui_logo);
-			box_image->Pack(m_image, false);
-		}
-
-		auto mirror_image = sfg::Button::Create(L"Mirror Image");
-
-		box_image->Pack(mirror_image, false);
-
-		auto spinner_box = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
-
-		m_spinner = sfg::Spinner::Create();
-		m_spinner->SetRequisition(sf::Vector2f(40.f, 40.f));
-		m_spinner->Start();
-		auto spinner_toggle = sfg::ToggleButton::Create(L"Spin");
-		spinner_toggle->SetActive(true);
-		spinner_box->SetSpacing(5.f);
-		spinner_box->Pack(m_spinner, false);
-		spinner_box->Pack(spinner_toggle, false);
-
-		box_image->Pack(spinner_box, false);
-
-		auto radio_box = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
-
-		auto radio1 = sfg::RadioButton::Create("Radio 1");
-		auto radio2 = sfg::RadioButton::Create("Radio 2", radio1->GetGroup());
-		auto radio3 = sfg::RadioButton::Create("Radio 3", radio2->GetGroup());
-
-		radio_box->Pack(radio1);
-		radio_box->Pack(radio2);
-		radio_box->Pack(radio3);
-
-		box_image->Pack(radio_box, false);
-
-		auto spinbutton = sfg::SpinButton::Create(scrollbar->GetAdjustment());
-		spinbutton->SetRequisition(sf::Vector2f(80.f, 0.f));
-		spinbutton->SetDigits(3);
-
-		auto spinbutton_box = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
-		spinbutton_box->Pack(spinbutton, false, false);
-
-		box_image->Pack(spinbutton_box, false, false);
-
-		auto aligned_combo_box = sfg::ComboBox::Create();
-		aligned_combo_box->AppendItem(L"I'm way over here");
-		aligned_combo_box->AppendItem(L"Me too");
-		aligned_combo_box->AppendItem(L"Me three");
-		aligned_combo_box->SelectItem(0);
-
-		auto alignment = sfg::Alignment::Create();
-		alignment->Add(aligned_combo_box);
-		box_image->Pack(alignment, true);
-		alignment->SetAlignment(sf::Vector2f(1.f, .5f));
-		alignment->SetScale(sf::Vector2f(0.f, .01f));
-
-		auto boxmain = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
-		boxmain->SetSpacing(5.f);
-		boxmain->Pack(scrollbar, false);
-		//boxmain->Pack(m_progress, false);
-		//boxmain->Pack(material_menu, false);
-		boxmain->Pack(frame2, false);
-		//boxmain->Pack(m_boxbuttonsh, false);
-		//boxmain->Pack(m_boxbuttonsv, false);
-		boxmain->Pack(box_image, true);
-		boxmain->Pack(separatorh, false);
-		//boxmain->Pack(m_table, true);
-		//boxmain->Pack(m_boxorientation, true);
-		boxmain->Pack(m_scrolled_window);
-
-		// Signals.
-		// window_main->GetSignal(sfg::Window::OnCloseButton).Connect([this] { OnHideWindowClicked(); });
-		// btnaddbuttonh->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnAddButtonHClick(); });
-		// btnaddbuttonv->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnAddButtonVClick(); });
-		// m_titlebar_toggle->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnToggleTitlebarClick(); });
-		// btnhidewindow->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnHideWindowClicked(); });
-		// btntoggleori->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnToggleOrientationClick(); });
-		// btntogglespace->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnToggleSpaceClick(); });
-		// m_limit_check->GetSignal(sfg::ToggleButton::OnToggle).Connect([this] { OnLimitCharsToggle(); });
-		// btnloadstyle->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnLoadThemeClick(); });
-		// m_scale->GetAdjustment()->GetSignal(sfg::Adjustment::OnChange).Connect([this] { OnAdjustmentChange(); });
-		// spinner_toggle->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnToggleSpinner(); });
-		// mirror_image->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnMirrorImageClick(); });
-		// m_switch_renderer->GetSignal(sfg::Widget::OnLeftClick).Connect([this] { OnSwitchRendererClick(); });
-
-		window_main->SetPosition(sf::Vector2f(100.f, 100.f));
-
-		// Add window to desktop
-		desktop.Add(window_main);
+		canvas->GetSignal(sfg::Canvas::OnLeftClick).Connect([this] {
+			auto abs_mouse_position = sf::Vector2f(sf::Mouse::getPosition(this->render_window));
+			auto rel_mouse_position = abs_mouse_position - this->canvas->GetAbsolutePosition();
+			Element element { this->element_types.at(this->active_element_name) };
+			element.setPosition(rel_mouse_position);
+			element.drawable.setScale(sf::Vector2f(10, 10));
+			this->elements.add(element);
+		});
 
 		m_fps_counter = 0;
 		m_fps_clock.restart();
@@ -334,7 +227,6 @@ public:
 		std::fill(std::begin(frame_times), std::end(frame_times), 0);
 
 		desktop.Update(0.f);
-
 		while (render_window.isOpen())
 		{
 			while (render_window.pollEvent(event))
@@ -347,15 +239,31 @@ public:
 				desktop.HandleEvent(event);
 			}
 
+			if (clock.getElapsedTime().asMicroseconds() >= 5000)
+			{
+				auto dT = float(clock.getElapsedTime().asMicroseconds()) / 1000000.f;
+				// Update() takes the elapsed time in seconds.
+				desktop.Update(dT);
+				// FIXME: Why slow if not * 10!?
+				elements.update(dT * 10);
+
+				clock.restart();
+			}
+
+			render_window.clear();
+
+			canvas->Bind();
+			canvas->Clear(sf::Color(0, 0, 0, 0));
+
+			// Draw elements on canvas
+			elements.draw(canvas);
+			canvas->Display();
+			canvas->Unbind();
+
 			render_window.draw(m_background_sprite);
 
-			auto microseconds = clock.getElapsedTime().asMicroseconds();
-
-			desktop.Update(static_cast<float>(microseconds) / 1000000.f);
 			render_window.setActive(true);
-
 			sfgui.Display(render_window);
-
 			render_window.display();
 
 			auto frame_time = frame_time_clock.getElapsedTime().asMicroseconds();
@@ -376,7 +284,7 @@ public:
 				}
 
 				std::stringstream sstr;
-				sstr << config.title << " -- FPS: " << m_fps_counter << " -- Frame Time (microsecs): min: "
+				sstr << config.title << " -- " << this->active_element_name << " -- FPS: " << m_fps_counter << " -- Frame Time (microsecs): min: "
 					 << *std::min_element(frame_times, frame_times + 5000) << " max: "
 					 << *std::max_element(frame_times, frame_times + 5000) << " avg: "
 					 << static_cast<float>(total_time) / 5000.f;
@@ -399,27 +307,22 @@ protected:
 	sfg::SFGUI sfgui {};
 
 	sfg::Window::Ptr window_main;
-	sfg::Box::Ptr m_boxbuttonsh;
-	sfg::Box::Ptr m_boxbuttonsv;
-	sfg::Box::Ptr m_boxorientation;
-	sfg::Entry::Ptr m_entry;
-	sfg::Table::Ptr m_table;
-	sfg::ScrolledWindow::Ptr m_scrolled_window;
-	sfg::Box::Ptr m_scrolled_window_box;
-	sfg::ToggleButton::Ptr m_titlebar_toggle;
-	sfg::CheckButton::Ptr m_limit_check;
-	sfg::Scale::Ptr m_scale;
-	sfg::ComboBox::Ptr m_combo_box;
-	sfg::ProgressBar::Ptr m_progress;
-	sfg::ProgressBar::Ptr m_progress_vert;
-	sfg::Spinner::Ptr m_spinner;
-	sfg::Image::Ptr m_image;
-	sfg::Canvas::Ptr m_gl_canvas;
-	//sfg::Canvas::Ptr m_sfml_canvas;
-	sfg::Button::Ptr m_switch_renderer;
+	sfg::Window::Ptr window_canvas;
+	sfg::Canvas::Ptr canvas;
 
 	sfg::Desktop desktop;
 
 	unsigned int m_fps_counter;
 	sf::Clock m_fps_clock;
+
+	// FIXME: Find a better way to associate selected element
+	std::string active_element_name = "fire";
+	const std::unordered_map<std::string, Element> element_types {
+		{ "sand", Element { .color = sf::Color::Yellow } },
+		{ "grass", Element { .color = sf::Color::Green, .fixed = true } },
+		{ "water", Element { .color = sf::Color::Blue } },
+		{ "fire", Element { .color = sf::Color::Red, .mass = -1.5 } },
+	};
+
+	ElementContainer elements {};
 };
