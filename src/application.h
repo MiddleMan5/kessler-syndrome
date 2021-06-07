@@ -190,12 +190,40 @@ public:
 
 		// Update the currently selected element
 		clear_button->GetSignal(sfg::Notebook::OnLeftClick).Connect([this] {
-			this->elements.children.clear();
+			this->elements.clear();
 		});
 
-		auto layout = sfg::Box::Create();
-		layout->Pack(element_menu_frame);
-		layout->Pack(buttons_frame);
+		auto layout = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
+		auto selection_layout = sfg::Box::Create(sfg::Box::Orientation::HORIZONTAL);
+		layout->Pack(selection_layout);
+		selection_layout->Pack(element_menu_frame);
+		selection_layout->Pack(buttons_frame);
+
+		auto info_frame = sfg::Frame::Create(L"Info");
+		auto info_layout = sfg::Box::Create(sfg::Box::Orientation::VERTICAL);
+		layout->Pack(info_frame);
+		info_frame->Add(info_layout);
+		auto info_table = sfg::Table::Create();
+
+		const auto get_debug_values = [this]() -> std::map<std::string, std::string> {
+			return {
+				{ "Total Elements", std::to_string(this->elements.size()) },
+				{ "Last Element ID", this->last_element.id },
+			};
+		};
+
+		for (size_t idx = 0; auto& [key, value] : get_debug_values())
+		{
+			info_table->Attach(sfg::Label::Create(key), sf::Rect<sf::Uint32>(0, idx, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
+			auto value_col = sfg::Label::Create(value);
+			info_table->Attach(value_col, sf::Rect<sf::Uint32>(1, idx, 1, 1), sfg::Table::FILL, sfg::Table::FILL);
+			value_col->SetId(key);
+			idx++;
+		}
+		info_table->SetRowSpacings(5.f);
+		info_table->SetColumnSpacings(5.f);
+		info_layout->Pack(info_table);
+
 		window_main->Add(layout);
 
 		// Signals
@@ -211,8 +239,8 @@ public:
 			auto rel_mouse_position = abs_mouse_position - this->canvas->GetAbsolutePosition();
 			Element element { this->element_types.at(this->active_element_name) };
 			element.setPosition(rel_mouse_position);
-			element.drawable.setScale(sf::Vector2f(10, 10));
-			this->elements.add(element);
+			element.shape.setScale(sf::Vector2f(10, 10));
+			this->last_element = this->elements.emplace(element);
 		});
 
 		m_fps_counter = 0;
@@ -229,6 +257,7 @@ public:
 		desktop.Update(0.f);
 		while (render_window.isOpen())
 		{
+
 			while (render_window.pollEvent(event))
 			{
 				if (event.type == sf::Event::Closed)
@@ -257,8 +286,20 @@ public:
 
 			// Draw elements on canvas
 			elements.draw(canvas);
+
 			canvas->Display();
 			canvas->Unbind();
+
+			// Update debug info
+			for (auto& [key, value] : get_debug_values())
+			{
+				auto wdg = info_table->GetWidgetById(key);
+				if (wdg != sfg::Widget::Ptr())
+				{
+					auto label_value = std::dynamic_pointer_cast<sfg::Label>(wdg);
+					label_value->SetText(value);
+				}
+			}
 
 			render_window.draw(m_background_sprite);
 
@@ -317,6 +358,7 @@ protected:
 
 	// FIXME: Find a better way to associate selected element
 	std::string active_element_name = "fire";
+	Element last_element;
 	const std::unordered_map<std::string, Element> element_types {
 		{ "sand", Element { .color = sf::Color::Yellow } },
 		{ "grass", Element { .color = sf::Color::Green, .fixed = true } },
@@ -324,5 +366,5 @@ protected:
 		{ "fire", Element { .color = sf::Color::Red, .mass = -1.5 } },
 	};
 
-	ElementContainer elements {};
+	ElementTree elements {};
 };

@@ -62,7 +62,7 @@ PRODUCTION_FOLDER_RESOURCES := $(PRODUCTION_FOLDER)
 #==============================================================================
 # Library directories (separated by spaces)
 LIB_DIRS?=
-INCLUDE_DIRS += include
+INCLUDE_DIRS?=
 # Link libraries (separated by spaces)
 LINK_LIBRARIES?=
 

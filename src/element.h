@@ -4,11 +4,19 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 
+#include "./uuid.h"
+#include "quadtree/quadtree.h"
+#include <algorithm>
+#include <cassert>
 #include <iterator>
+#include <memory>
 #include <random>
+#include <ranges>
+#include <type_traits>
+#include <vector>
 
 template <typename Iter, typename RandomGenerator>
-Iter select_randomly(Iter start, Iter end, RandomGenerator& g)
+static Iter select_randomly(Iter start, Iter end, RandomGenerator& g)
 {
 	std::uniform_int_distribution<> dis(0, std::distance(start, end) - 1);
 	std::advance(start, dis(g));
@@ -16,7 +24,7 @@ Iter select_randomly(Iter start, Iter end, RandomGenerator& g)
 }
 
 template <typename Iter>
-Iter select_randomly(Iter start, Iter end)
+static Iter select_randomly(Iter start, Iter end)
 {
 	static std::random_device rd;
 	static std::mt19937 gen(rd());
@@ -24,24 +32,30 @@ Iter select_randomly(Iter start, Iter end)
 }
 
 template <typename RandomGenerator>
-bool random_bool(RandomGenerator& g)
+static bool random_bool(RandomGenerator& g)
 {
 	std::uniform_int_distribution<> dis(0, 1);
 	return bool(dis(g));
 }
 
-bool random_bool()
+static bool random_bool()
 {
 	static std::random_device rd;
 	static std::mt19937 gen(rd());
 	return random_bool(gen);
 }
 
+static sf::Vector2f DEFAULT_POSITION { std::numeric_limits<float>::min(), std::numeric_limits<float>::min() };
+
 struct Element;
-using ElementList = std::vector<std::shared_ptr<Element>>;
+class ElementTree;
+using ElementList = std::vector<Element>;
 
 struct Element
 {
+	using Ptr = std::shared_ptr<Element>;
+	using Shape = sf::RectangleShape;
+
 	// Color of pixel
 	sf::Color color { 255, 255, 255 };
 
@@ -57,20 +71,30 @@ struct Element
 	bool visible { true };
 
 	// Holds transformable properties such as position and scale
-	sf::RectangleShape drawable { sf::Vector2f(1, 1) };
+	Element::Shape shape { sf::Vector2f(1, 1) };
 
-	bool canMove(const sf::Vector2f& next_pos, ElementList& elements)
+	// A unique element id
+	uuid::uuid4 id = uuid::generate_uuid_v4();
+
+	bool collides(Element element, sf::Vector2f position = DEFAULT_POSITION) const
 	{
-		auto current_pos = this->drawable.getPosition();
-		auto next_draw = sf::RectangleShape(this->drawable);
-		next_draw.setPosition(next_pos);
+		auto next_draw = Element::Shape(this->shape);
+		next_draw.setPosition(position == DEFAULT_POSITION ? this->shape.getPosition() : position);
+		return element.shape.getGlobalBounds().intersects(next_draw.getGlobalBounds());
+	}
 
-		for (auto element : elements)
+	bool canMove(const sf::Vector2f& next_pos, const std::vector<Element*>& elements)
+	{
+		auto not_self = [this](const Element* e) { return e->id != this->id; };
+		for (auto element : elements | std::views::filter(not_self))
 		{
-			// FIXME: Use element id's instead
-			if (element->drawable.getPosition() != current_pos)
+			if (this->collides(*element, next_pos))
 			{
-				if (element->drawable.getGlobalBounds().intersects(next_draw.getGlobalBounds()))
+				if (element->fixed)
+				{
+					return false;
+				}
+				else
 				{
 					return false;
 				}
@@ -83,17 +107,16 @@ struct Element
 	template <typename... Args>
 	auto setPosition(Args&&... args)
 	{
-		return this->drawable.setPosition(std::forward<Args>(args)...);
+		return this->shape.setPosition(std::forward<Args>(args)...);
 	}
 
-	template <typename... Args>
-	auto getPosition(Args&&... args)
+	auto getPosition() const
 	{
-		return this->drawable.getPosition(std::forward<Args>(args)...);
+		return this->shape.getPosition();
 	}
 
 	// Update block physics
-	void update(double dT, ElementList& elements)
+	void update(double dT, const std::vector<Element*>& elements)
 	{
 		if (!this->fixed)
 		{
@@ -138,6 +161,12 @@ struct Element
 				else if (checkDir(left_first ? 1 : -1))
 				{
 				}
+				// Check if stuck
+				else if (!this->canMove(this->getPosition(), elements))
+				{
+					this->velocity = next_velocity;
+					this->setPosition(next_pos);
+				}
 				else
 				{
 					this->velocity = sf::Vector2f { 0, 0 };
@@ -151,25 +180,60 @@ struct Element
 	{
 		if (this->visible)
 		{
-			this->drawable.setFillColor(this->color);
-			canvas->Draw(this->drawable);
+			this->shape.setFillColor(this->color);
+			canvas->Draw(this->shape);
 		}
 	}
 };
 
-struct ElementContainer
+static quadtree::Box<float> getElementBox(Element const& element)
 {
-	// draw to current target
-	template <typename... Args>
-	auto add(Args&&... args)
+	return quadtree::Box<float> { element.shape.getPosition(), element.shape.getSize() };
+}
+
+static quadtree::Box<float> MAX_SIZE { sf::Vector2f { 0, 0 }, sf::Vector2f { std::numeric_limits<float>::max(), std::numeric_limits<float>::max() } };
+
+static bool operator==(Element const& lhs, Element const& rhs) noexcept
+{
+	return lhs.id == rhs.id;
+}
+
+class ElementTree : public quadtree::Quadtree<Element, decltype(getElementBox)*>
+{
+public:
+	using BoxType = Element::Shape;
+
+	ElementTree(decltype(MAX_SIZE) world_size = MAX_SIZE) :
+		quadtree::Quadtree<Element, decltype(getElementBox)*>(world_size, getElementBox)
 	{
-		return this->children.emplace_back(std::make_shared<Element>(std::forward<Args>(args)...));
 	}
 
-	void draw(sfg::Canvas::Ptr canvas) const
+	auto emplace(const Element& value)
 	{
-		// draw its children
-		for (auto child : this->children)
+		Element el { value };
+		el.id = uuid::generate_uuid_v4();
+		return this->add(mRoot.get(), 0, mBox, el);
+	}
+
+	std::size_t size() const
+	{
+		auto children = this->query(MAX_SIZE);
+		return children.size();
+	}
+
+	void clear()
+	{
+		auto children = this->query(MAX_SIZE);
+		for (auto child : children)
+		{
+			this->remove(child);
+		}
+	}
+
+	void draw(sfg::Canvas::Ptr canvas)
+	{
+		auto children = this->access(MAX_SIZE);
+		for (auto& child : children)
 		{
 			child->draw(canvas);
 		}
@@ -177,12 +241,10 @@ struct ElementContainer
 
 	void update(double dT)
 	{
-		// draw its children
-		for (auto child : this->children)
+		auto children = this->access(MAX_SIZE);
+		for (auto& child : children)
 		{
-			child->update(dT, this->children);
+			child->update(dT, children);
 		}
 	}
-
-	ElementList children {};
 };

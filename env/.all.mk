@@ -7,6 +7,8 @@ _CFLAGS_WARNINGS := -Wall -Werror -Wextra -Wpedantic -Wunreachable-code -Wunused
 _CFLAGS_OTHER := -fdiagnostics-color=always
 CFLAGS := $(_CFLAGS_STD) $(_CFLAGS_WARNINGS) $(_CFLAGS_OTHER)
 
+INCLUDE_DIRS := lib
+
 LINK_LIBRARIES := \
 	sfml-graphics \
 	sfml-audio \
