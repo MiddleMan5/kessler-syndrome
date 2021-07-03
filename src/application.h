@@ -185,6 +185,36 @@ public:
 		auto buttons_frame = sfg::Frame::Create(L"Buttons");
 		auto buttons = sfg::Box::Create();
 		auto clear_button = sfg::Button::Create("Clear");
+
+		const auto toggleElementBool = [&](std::string const& setting) {
+			if (setting == "collide_all")
+			{
+				this->elements.collide_all = !this->elements.collide_all;
+			}
+			else if (setting == "show_bounds")
+			{
+				this->elements.show_bounds = !this->elements.show_bounds;
+			}
+			else if (setting == "show_collisions")
+			{
+				this->elements.show_collisions = !this->elements.show_collisions;
+			}
+			else
+			{
+				assert(false);
+			}
+		};
+
+		const std::vector<std::string> element_toggles { "collide_all", "show_bounds", "show_collisions" };
+		for (auto& entry : element_toggles)
+		{
+			auto button = sfg::Button::Create(entry);
+			buttons->Pack(button);
+			button->GetSignal(sfg::Notebook::OnLeftClick).Connect([&] {
+				toggleElementBool(entry);
+			});
+		}
+
 		buttons->Pack(clear_button);
 		buttons_frame->Add(buttons);
 
@@ -208,6 +238,7 @@ public:
 		const auto get_debug_values = [this]() -> std::map<std::string, std::string> {
 			return {
 				{ "Total Elements", std::to_string(this->elements.size()) },
+				{ "Drawn Elements", std::to_string(this->elements.query(this->elements.screen_size).size()) },
 				{ "Last Element ID", this->last_element.id },
 			};
 		};
@@ -234,13 +265,36 @@ public:
 			this->active_element_name = element_menu->GetNthPage(current_page)->GetId();
 		});
 
-		canvas->GetSignal(sfg::Canvas::OnLeftClick).Connect([this] {
-			auto abs_mouse_position = sf::Vector2f(sf::Mouse::getPosition(this->render_window));
-			auto rel_mouse_position = abs_mouse_position - this->canvas->GetAbsolutePosition();
+		const auto getRelMousePos = [this]() {
+			const auto canvas_pos = this->canvas->GetAbsolutePosition();
+			const auto abs_mouse_position = sf::Vector2f(sf::Mouse::getPosition(this->render_window));
+			return abs_mouse_position - canvas_pos;
+		};
+
+		const auto element_size = 10;
+
+		auto last_placed_pos = getRelMousePos();
+		const auto placeSelectedElement = [&](sf::Vector2f const& pos) {
 			Element element { this->element_types.at(this->active_element_name) };
-			element.setPosition(rel_mouse_position);
-			element.shape.setScale(sf::Vector2f(10, 10));
+			element.setPosition(pos);
+			element.shape.setScale(sf::Vector2f(element_size, element_size));
 			this->last_element = this->elements.emplace(element);
+			last_placed_pos = pos;
+		};
+
+		canvas->GetSignal(sfg::Canvas::OnMouseMove).Connect([&] {
+			this->elements.screen_size = this->window_canvas->GetClientRect();
+			const auto mouse_pos = getRelMousePos();
+			const auto left_held = sf::Mouse::isButtonPressed(sf::Mouse::Button::Left);
+			const auto placed_difference = sf::Vector2f(std::abs(last_placed_pos.x - mouse_pos.x), std::abs(last_placed_pos.y - mouse_pos.y));
+			if (left_held && (placed_difference.x > element_size or placed_difference.y > element_size))
+			{
+				placeSelectedElement(mouse_pos);
+			}
+		});
+
+		canvas->GetSignal(sfg::Canvas::OnLeftClick).Connect([&] {
+			placeSelectedElement(getRelMousePos());
 		});
 
 		m_fps_counter = 0;

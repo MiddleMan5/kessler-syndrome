@@ -8,6 +8,7 @@
 #include "quadtree/quadtree.h"
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <iterator>
 #include <memory>
 #include <random>
@@ -188,7 +189,7 @@ struct Element
 
 static quadtree::Box<float> getElementBox(Element const& element)
 {
-	return quadtree::Box<float> { element.shape.getPosition(), element.shape.getSize() };
+	return element.shape.getGlobalBounds();
 }
 
 static quadtree::Box<float> MAX_SIZE { sf::Vector2f { 0, 0 }, sf::Vector2f { std::numeric_limits<float>::max(), std::numeric_limits<float>::max() } };
@@ -203,9 +204,12 @@ class ElementTree : public quadtree::Quadtree<Element, decltype(getElementBox)*>
 public:
 	using BoxType = Element::Shape;
 
+	decltype(MAX_SIZE) screen_size = MAX_SIZE;
+
 	ElementTree(decltype(MAX_SIZE) world_size = MAX_SIZE) :
 		quadtree::Quadtree<Element, decltype(getElementBox)*>(world_size, getElementBox)
 	{
+		screen_size = world_size;
 	}
 
 	auto emplace(const Element& value)
@@ -230,21 +234,89 @@ public:
 		}
 	}
 
+	bool show_bounds = false;
+	bool show_collisions = false;
+	bool collide_all = false;
+	float min_search_size = 2.0;
+
+	auto getSearchWindowForElement(const Element& element)
+	{
+		// FIXME: This is ridiculous
+		auto search_box { element.shape };
+		const auto scale = search_box.getScale();
+		const auto size = element.shape.getSize();
+		const auto pos = element.shape.getPosition();
+		const auto bounds = element.shape.getGlobalBounds();
+		search_box.setOrigin(sf::Vector2f { size.x / 2.0f, size.y / 2.0f });
+		search_box.setPosition(sf::Vector2f { pos.x + (bounds.width / 2.0f), pos.y + (bounds.height / 2.0f) });
+		search_box.setScale(sf::Vector2f { scale.x * std::max(min_search_size, std::abs(element.velocity.x)), scale.y * std::max(min_search_size, std::abs(element.velocity.y)) });
+		return search_box;
+	}
+
+	auto accessNeighbors(const Element& element)
+	{
+		return this->access(getSearchWindowForElement(element).getGlobalBounds());
+	}
+
 	void draw(sfg::Canvas::Ptr canvas)
 	{
-		auto children = this->access(MAX_SIZE);
+		auto children = this->access(screen_size);
+
+		auto intersection_pairs = this->findAllIntersections();
+		std::map<decltype(Element::id), Element*> intersections {};
+		for (auto& pair : intersection_pairs)
+		{
+			for (auto& child : { pair.first, pair.second })
+			{
+				if (!intersections.contains(child.id))
+				{
+					auto found = std::find_if(children.begin(), children.end(), [&child](const auto& e) { return e->id == child.id; });
+					if (found != children.end())
+					{
+						intersections[child.id] = *found;
+					}
+				}
+			}
+		}
 		for (auto& child : children)
 		{
-			child->draw(canvas);
+
+			auto search_box = getSearchWindowForElement(*child);
+			if (show_bounds)
+			{
+				search_box.setOutlineThickness(0.1);
+				search_box.setOutlineColor(sf::Color::Red);
+				search_box.setFillColor(sf::Color::Transparent);
+				canvas->Draw(search_box);
+			}
+
+			if (show_collisions && intersections.contains(child->id))
+			{
+				auto orig_color = child->color;
+				child->color = sf::Color::White;
+				child->draw(canvas);
+				child->color = orig_color;
+			}
+			else
+			{
+				child->draw(canvas);
+			}
 		}
 	}
 
 	void update(double dT)
 	{
-		auto children = this->access(MAX_SIZE);
+
+		auto children = this->access(screen_size);
+		auto intersections = this->findAllIntersections();
+		// For every child, only pass nearest neighbors for collision detection
 		for (auto& child : children)
 		{
-			child->update(dT, children);
+			// Only update moveable elements
+			if (!child->fixed)
+			{
+				child->update(dT, collide_all ? children : this->accessNeighbors(*child));
+			}
 		}
 	}
 };

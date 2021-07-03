@@ -91,6 +91,23 @@ public:
 	{
 	}
 
+	constexpr Box(const sf::Rect<T>& rect) noexcept :
+		left(rect.left),
+		top(rect.top),
+		width(rect.width),
+		height(rect.height)
+	{
+	}
+
+	constexpr Box& scale(T factor) noexcept
+	{
+		left = left * factor;
+		top = top * factor;
+		width = width * factor;
+		height = height * factor;
+		return *this;
+	}
+
 	constexpr T getRight() const noexcept
 	{
 		return left + width;
